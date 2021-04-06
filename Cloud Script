@@ -1,0 +1,258 @@
+
+handlers.getInventory = function () {
+
+    var inv = server.GetUserInventory(
+        {
+            PlayFabId: currentPlayerId
+        }
+    )
+
+    var itemID = ["V1GreenShield", "V1GreenArmor", "V1GreenFirePower"];
+
+    var userInventoryArray = [];
+    for (var a = 0; a < inv.Inventory.length; a++) {
+        userInventoryArray.push(inv.Inventory[a]["ItemId"]);
+    }
+
+    if (inv.Inventory.length != 0) {
+
+        for (var i = 0; i < itemID.length; i++) {
+            for (var a = 0; a < inv.Inventory.length; a++) {
+                if (!userInventoryArray.includes(itemID[i])) {
+                    server.GrantItemsToUser({
+                        PlayFabId: currentPlayerId,
+                        ItemIds: itemID[i]
+                    });
+
+                    log.debug("execute" + inv.Inventory[a]["ItemId"] + " " + itemID[i]);
+                }
+            }
+        }
+    }
+    else {
+        server.GrantItemsToUser({
+            PlayFabId: currentPlayerId,
+            ItemIds: itemID
+        });
+    }
+
+    return inv.Inventory;
+}
+
+handlers.getInventoryTest = function () {
+
+    var inv = server.GetUserInventory(
+        {
+            PlayFabId: currentPlayerId
+        }
+    )
+
+    var userInventoryArray = [];
+    for (var a = 0; a < inv.Inventory.length; a++) {
+        userInventoryArray.push(inv.Inventory[a]["ItemId"]);
+    }
+
+    var cat = server.GetCatalogItems(
+        CatalogVersion = "Upgrades"
+    )
+
+return cat;
+    //return JSON.stringify(userInventoryArray.includes("V1GreenArmors"));
+}
+
+
+
+handlers.addPlayerDataValue = function (args) {
+    var req =
+    {
+        PlayFabId: currentPlayerId,
+        InfoRequestParameters:
+        {
+            GetUserData: true,
+            GetTitleData: true,
+        }
+    }
+
+    var result = server.GetPlayerCombinedInfo(req).InfoResultPayload;
+
+    var prevBalance;
+    var newBalance;
+    var amountChanged;
+
+    if (result.UserData.Ammo != null) {
+        newBalance = result.UserData.Ammo.Value;
+    }
+    else {
+        server.UpdateUserData
+            ({
+                PlayFabId: currentPlayerId,
+                Data: { Ammo: result.TitleData.StartingAmmo }
+            });
+
+        var ammoAmount = server.GetUserData
+            ({
+                PlayFabId: currentPlayerId,
+                Keys: "Ammo"
+            });
+
+        newBalance = amountChange.Data.Ammo.Value;
+        prevBalance = newBalance;
+    }
+
+    prevBalance = newBalance;
+
+    if (args && args.hasOwnProperty("addValue") && args.addValue > 0)
+        newBalance = parseInt(newBalance) + parseInt(args.addValue);
+
+    amountChanged = parseInt(newBalance) - parseInt(prevBalance);
+
+    if (amountChanged % 1 == 0) amountChanged = parseInt(amountChanged);
+    if (amountChanged < 0) amountChanged *= -1;
+
+    server.UpdateUserData({
+        PlayFabId: currentPlayerId,
+        Data: { Ammo: newBalance }
+    });
+
+    return {
+        PrevBalance: prevBalance,
+        NewBalance: newBalance,
+        AmountChange: amountChanged
+    };
+
+};
+
+// test...
+
+
+handlers.resetAmmo = function () {
+    var req =
+    {
+        PlayFabId: currentPlayerId,
+        InfoRequestParameters:
+        {
+            GetUserData: true,
+            GetTitleData: true
+        }
+    }
+
+    var resultPayload = server.GetPlayerCombinedInfo(req).InfoResultPayload;
+
+    var playerAmmoAmount;
+
+    if (resultPayload.UserData.Ammo != null) {
+        server.UpdateUserData
+            ({
+                PlayFabId: currentPlayerId,
+                Data: { Ammo: resultPayload.TitleData.StartingAmmo }
+            });
+
+        playerAmmoAmount = resultPayload.TitleData.StartingAmmo;
+    }
+
+    return {
+        NewBalance: playerAmmoAmount
+    };
+};
+
+
+
+// refactor
+handlers.playerInitialize = function () {
+    // test vscode
+    var req =
+    {
+        PlayFabId: currentPlayerId,
+        InfoRequestParameters:
+        {
+            GetUserAccountInfo: true,
+            GetUserVirtualCurrency: true,
+            GetUserData: true,
+            GetPlayerProfile: true,
+            GetTitleData: true,
+            GetUserInventory: true
+        }
+    };
+
+    // get player combined info
+    var resultPayload = server.GetPlayerCombinedInfo(req).InfoResultPayload;
+    log.debug('resultPayload: ' + JSON.stringify(resultPayload));
+
+    // Check if Ammo is stored in UserData
+    // if present, then assign to playerAmmo
+    // if null, then create a new one and assign to playerAmmo
+    // TODO: separate method? or generic method of initializing UserData values?
+
+    var playerAmmo = initializeUserData("Ammo", resultPayload.TitleData.StartingAmmo, resultPayload);
+    var playerGender = initializeUserData("Gender", resultPayload.TitleData.StartingGender, resultPayload);
+    var playerSkinTone = initializeUserData("SkinTone", resultPayload.TitleData.StartingSkinTone, resultPayload);
+
+    var element = {};
+    element["Ammo"] = playerAmmo;
+    element["Gender"] = playerGender;
+    element["SkinTone"] = playerSkinTone;
+    element["ElementTable"] = resultPayload.TitleData.ElementTable;
+
+    //inititiaze data and the data is == null then create a new data
+
+    // Check if DisplayName is stored in PlayerProfile
+    // if present, then assign to playerDisplayName
+    // if null, then assign empty string to playerDisplayName.
+
+    var playerDisplayName = initializeDisplayName(resultPayload);
+
+    element["DisplayName"] = playerDisplayName;
+
+    // log.debug('testResult==' + testResult.InfoResultPayload.TitleData.Data["StartingEnergy"]);
+
+    return element;
+
+    /*
+    return { 
+        DisplayName: playerDisplayName,
+        Ammo: playerAmmo,
+        Coins: resultPayload.UserVirtualCurrency.VC,
+        Gender: playerGender,
+        SkinTone: playerSkinTone,
+        ElementTable: elementTable
+    } ;*/
+};
+
+initializeUserData = function (key, titleDataResult, resultPayload) {
+    var dataToReturn;
+
+    if (resultPayload.UserData[key] == null) {
+        server.UpdateUserData
+            ({
+                PlayFabId: currentPlayerId,
+                Data: {
+                    [key]: titleDataResult,
+                }
+            });
+
+        var getData = server.GetUserData
+            ({
+                PlayFabId: currentPlayerId,
+                Keys: key
+            });
+
+        dataToReturn = getData.Data[key].Value;
+    }
+    else {
+        dataToReturn = resultPayload.UserData[key].Value;
+    }
+    return dataToReturn;
+}
+
+initializeDisplayName = function (resultPayload) {
+    var playerDisplayName;
+    if (resultPayload.PlayerProfile.DisplayName != null) {
+        log.debug('DisplayName is detected. Assigning to playerDisplayName');
+        playerDisplayName = resultPayload.PlayerProfile.DisplayName;
+    }
+    else {
+        playerDisplayName = '';
+    }
+    return playerDisplayName;
+}
+
